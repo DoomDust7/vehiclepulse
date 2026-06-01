@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react'
 import { api, ThresholdRule } from '../api/client'
 
+const DEFAULT_RULES: ThresholdRule[] = [
+  { pid: '05', op: 'gt',            value: 110,  severity: 'warning',  cooldown_s: 30,  range_min: null, range_max: null },
+  { pid: '05', op: 'gt',            value: 120,  severity: 'critical', cooldown_s: 10,  range_min: null, range_max: null },
+  { pid: '0C', op: 'gt',            value: 6000, severity: 'warning',  cooldown_s: 5,   range_min: null, range_max: null },
+  { pid: '14', op: 'range_outside', value: 0,    severity: 'warning',  cooldown_s: 15,  range_min: 0.1,  range_max: 0.9 },
+  { pid: '15', op: 'range_outside', value: 0,    severity: 'warning',  cooldown_s: 15,  range_min: 0.1,  range_max: 0.9 },
+  { pid: '10', op: 'gt',            value: 20,   severity: 'warning',  cooldown_s: 10,  range_min: null, range_max: null },
+  { pid: '04', op: 'gt',            value: 95,   severity: 'warning',  cooldown_s: 10,  range_min: null, range_max: null },
+]
+
 interface Props {
   onBack: () => void
 }
@@ -12,7 +22,10 @@ export default function ThresholdEditor({ onBack }: Props) {
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
-    api.getThresholds().then(setRules).finally(() => setLoading(false))
+    api.getThresholds()
+      .then(setRules)
+      .catch(() => setRules(DEFAULT_RULES))
+      .finally(() => setLoading(false))
   }, [])
 
   async function save() {
