@@ -2,7 +2,7 @@
 
 A real-time OBD-II vehicle diagnostic tool that streams live sensor data from an ELM327 adapter, detects threshold faults with freeze-frame context, and provides a React dashboard for monitoring and offline session analysis.
 
-**Live demo:** [vehiclepulse.vercel.app](https://vehiclepulse.vercel.app) (UI preview — connect your own backend)
+**Live demo:** [vehiclepulse.vercel.app](https://vehiclepulse.vercel.app) &nbsp;·&nbsp; **GitHub:** [DoomDust7/vehiclepulse](https://github.com/DoomDust7/vehiclepulse)
 
 ---
 
