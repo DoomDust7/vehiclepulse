@@ -4,7 +4,6 @@ import { startDemo, stopDemo } from '../demo/demoSimulator'
 
 const WS_SCHEME = window.location.protocol === 'https:' ? 'wss' : 'ws'
 const WS_URL = import.meta.env.VITE_WS_URL ?? `${WS_SCHEME}://${window.location.hostname}:8000/ws`
-const DEMO_START_AFTER_MS = 2500
 // While demo runs, retry backend every 30s in the background
 const DEMO_RETRY_INTERVAL_MS = 30_000
 
@@ -80,44 +79,53 @@ export function useWebSocket() {
       else if (msg.type === 'session_end') onSessionEnd()
     }
 
-    // First connection attempt
+    // First connection attempt — with a hard 3s open timeout so a TCP hang
+    // (e.g. Vercel port 8000 unreachable) doesn't block the demo indefinitely.
     setConnectionStatus('connecting')
-    let ws: WebSocket
-    try {
-      ws = new WebSocket(WS_URL)
-    } catch {
-      // HTTPS → ws:// blocked immediately; go straight to demo
-      demoTimer.current = setTimeout(launchDemo, DEMO_START_AFTER_MS)
-      return () => {
-        unmounted = true
-        if (demoTimer.current) clearTimeout(demoTimer.current)
-        if (retryTimer.current) clearTimeout(retryTimer.current)
-        if (demoRunning.current) stopDemo()
-      }
-    }
-    wsRef.current = ws
 
-    ws.onopen = () => {
-      if (demoTimer.current) { clearTimeout(demoTimer.current); demoTimer.current = null }
-      setConnectionStatus('connected')
-    }
-
-    ws.onmessage = (ev) => {
-      try {
-        const envelope = JSON.parse(ev.data)
-        const messages = envelope.type === 'batch' ? envelope.messages : [envelope]
-        for (const msg of messages) dispatch(msg)
-      } catch { /* ignore */ }
-    }
-
-    ws.onclose = () => {
+    function tryConnect() {
       if (unmounted) return
-      setConnectionStatus('reconnecting')
-      // Start demo after the first failed connection
-      demoTimer.current = setTimeout(launchDemo, DEMO_START_AFTER_MS)
+      let ws: WebSocket
+      try {
+        ws = new WebSocket(WS_URL)
+      } catch {
+        launchDemo()
+        return
+      }
+      wsRef.current = ws
+
+      const openTimeout = setTimeout(() => {
+        if (ws.readyState !== WebSocket.OPEN) ws.close()
+      }, 3000)
+
+      ws.onopen = () => {
+        clearTimeout(openTimeout)
+        if (demoTimer.current) { clearTimeout(demoTimer.current); demoTimer.current = null }
+        if (demoRunning.current) { demoRunning.current = false; stopDemo() }
+        setConnectionStatus('connected')
+      }
+
+      ws.onmessage = (ev) => {
+        try {
+          const envelope = JSON.parse(ev.data)
+          const messages = envelope.type === 'batch' ? envelope.messages : [envelope]
+          for (const msg of messages) dispatch(msg)
+        } catch { /* ignore */ }
+      }
+
+      ws.onclose = () => {
+        clearTimeout(openTimeout)
+        if (unmounted) return
+        if (!demoRunning.current) {
+          setConnectionStatus('reconnecting')
+          launchDemo()
+        }
+      }
+
+      ws.onerror = () => ws.close()
     }
 
-    ws.onerror = () => ws.close()
+    tryConnect()
 
     return () => {
       unmounted = true
