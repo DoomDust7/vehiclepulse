@@ -1,16 +1,29 @@
 import { useEffect, useRef } from 'react'
 import { usePIDStore } from '../store/pidStore'
+import { startDemo, stopDemo } from '../demo/demoSimulator'
 
 const WS_URL = import.meta.env.VITE_WS_URL ?? `ws://${window.location.hostname}:8000/ws`
 const MAX_BACKOFF_MS = 30_000
+// Start demo after this many failed ms (first backoff = 1 s, so demo kicks in after ~2 s)
+const DEMO_START_AFTER_MS = 2500
 
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null)
   const backoffRef = useRef(1000)
+  const demoRunning = useRef(false)
+  const demoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { onPIDReading, onFaultEvent, onSessionStart, onSessionEnd, setConnectionStatus } = usePIDStore()
 
   useEffect(() => {
     let unmounted = false
+
+    // Schedule demo if real backend doesn't connect within DEMO_START_AFTER_MS
+    demoTimer.current = setTimeout(() => {
+      if (!unmounted && backoffRef.current > 1000) {
+        demoRunning.current = true
+        startDemo()
+      }
+    }, DEMO_START_AFTER_MS)
 
     function connect() {
       if (unmounted) return
@@ -21,16 +34,22 @@ export function useWebSocket() {
       ws.onopen = () => {
         backoffRef.current = 1000
         setConnectionStatus('connected')
+        // Real backend connected — tear down demo
+        if (demoRunning.current) {
+          demoRunning.current = false
+          stopDemo()
+        }
+        if (demoTimer.current) {
+          clearTimeout(demoTimer.current)
+          demoTimer.current = null
+        }
       }
 
       ws.onmessage = (ev) => {
         try {
           const envelope = JSON.parse(ev.data)
-          // Backend sends batched frames
           const messages = envelope.type === 'batch' ? envelope.messages : [envelope]
-          for (const msg of messages) {
-            dispatch(msg)
-          }
+          for (const msg of messages) dispatch(msg)
         } catch {
           // ignore malformed frames
         }
@@ -55,9 +74,12 @@ export function useWebSocket() {
     }
 
     connect()
+
     return () => {
       unmounted = true
       wsRef.current?.close()
+      if (demoTimer.current) clearTimeout(demoTimer.current)
+      if (demoRunning.current) stopDemo()
     }
   }, [])
 }
