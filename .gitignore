@@ -25,3 +25,4 @@ frontend/.env.local
 # IDE
 .idea/
 .vscode/
+frontend/src/**/*.js
