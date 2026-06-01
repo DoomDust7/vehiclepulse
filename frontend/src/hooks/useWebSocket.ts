@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react'
 import { usePIDStore } from '../store/pidStore'
 import { startDemo, stopDemo } from '../demo/demoSimulator'
 
-const WS_URL = import.meta.env.VITE_WS_URL ?? `ws://${window.location.hostname}:8000/ws`
+const WS_SCHEME = window.location.protocol === 'https:' ? 'wss' : 'ws'
+const WS_URL = import.meta.env.VITE_WS_URL ?? `${WS_SCHEME}://${window.location.hostname}:8000/ws`
 const MAX_BACKOFF_MS = 30_000
 // Start demo after this many failed ms (first backoff = 1 s, so demo kicks in after ~2 s)
 const DEMO_START_AFTER_MS = 2500
@@ -28,7 +29,17 @@ export function useWebSocket() {
     function connect() {
       if (unmounted) return
       setConnectionStatus('connecting')
-      const ws = new WebSocket(WS_URL)
+      let ws: WebSocket
+      try {
+        ws = new WebSocket(WS_URL)
+      } catch {
+        // e.g. SecurityError on https → ws:// mismatch; treat as immediate close
+        setConnectionStatus('reconnecting')
+        const delay = Math.min(backoffRef.current, MAX_BACKOFF_MS)
+        backoffRef.current = Math.min(backoffRef.current * 2, MAX_BACKOFF_MS)
+        setTimeout(connect, delay)
+        return
+      }
       wsRef.current = ws
 
       ws.onopen = () => {
